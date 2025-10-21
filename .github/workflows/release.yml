@@ -46,7 +46,15 @@ jobs:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       with:
+        name: spot-instance-advisor
         path: dist
+
+    - name: List downloaded files
+      run: |
+        echo "Contents of dist directory:"
+        ls -la dist/
+        echo "File details:"
+        file dist/spot-instance-advisor || echo "File not found"
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
