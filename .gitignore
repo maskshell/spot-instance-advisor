@@ -7,6 +7,9 @@
 spot-instance-advisor
 spot-instance-advisor_unix
 
+# Release build directory
+dist/
+
 # Test binary, built with `go test -c`
 *.test
 

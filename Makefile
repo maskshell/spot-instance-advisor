@@ -9,7 +9,7 @@ GOFMT=$(GOCMD) fmt
 GOVET=$(GOCMD) vet
 BINARY_NAME=spot-instance-advisor
 
-.PHONY: all build clean test deps fmt vet tidy vendor help
+.PHONY: all build build-release clean test deps fmt vet tidy vendor help
 
 all: deps test build
 
@@ -17,12 +17,21 @@ all: deps test build
 build:
 	$(GOBUILD) -o $(BINARY_NAME) -v .
 
+# Build for release (optimized)
+build-release:
+	@echo "Building optimized release binary..."
+	@mkdir -p dist
+	CGO_ENABLED=0 $(GOBUILD) -ldflags="-s -w" -o dist/$(BINARY_NAME) -v .
+	@echo "Release build completed"
+	@ls -la dist/
+
 
 
 # Clean build artifacts
 clean:
 	$(GOCLEAN)
 	rm -f $(BINARY_NAME)
+	rm -rf dist/
 
 # Run tests
 test: fmt vet
@@ -58,6 +67,7 @@ vendor:
 help:
 	@echo "Available targets:"
 	@echo "  build         - Build the binary"
+	@echo "  build-release  - Build optimized release binary"
 	@echo "  clean         - Clean build artifacts"
 	@echo "  test          - Run tests"
 	@echo "  test-coverage - Run tests with coverage report"
