@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"os"
+
 	ecsService "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
 )
 
@@ -18,6 +21,7 @@ var (
 	cutoff          = flag.Int("cutoff", 2, "Discount of the spot instance prices")
 	limit           = flag.Int("limit", 20, "Limit of the spot instances")
 	resolution      = flag.Int("resolution", 7, "The window of price history analysis")
+	jsonOutput      = flag.Bool("json", false, "Output results in JSON format")
 )
 
 func main() {
@@ -25,18 +29,54 @@ func main() {
 
 	client, err := ecsService.NewClientWithAccessKey(*region, *accessKeyId, *accessKeySecret)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to create ecs client,because of %v", err))
+		if *jsonOutput {
+			outputJSONError("Failed to create ecs client", err.Error())
+		} else {
+			panic(fmt.Sprintf("Failed to create ecs client,because of %v", err))
+		}
+		return
 	}
 
 	metastore := NewMetaStore(client)
 
-	metastore.Initialize(*region)
+	err = metastore.Initialize(*region, *jsonOutput)
+	if err != nil {
+		if *jsonOutput {
+			outputJSONError("Failed to initialize metastore", err.Error())
+		} else {
+			panic(fmt.Sprintf("Failed to initialize metastore,because of %v", err))
+		}
+		return
+	}
 
-	instanceTypes := metastore.FilterInstances(*cpu, *memory, *maxCpu, *maxMemory, *family)
+	instanceTypes := metastore.FilterInstances(*cpu, *memory, *maxCpu, *maxMemory, *family, *jsonOutput)
 
-	historyPrices := metastore.FetchSpotPrices(instanceTypes, *resolution)
+	historyPrices := metastore.FetchSpotPrices(instanceTypes, *resolution, *jsonOutput)
 
-	sortedInstancePrices := metastore.SpotPricesAnalysis(historyPrices)
+	sortedInstancePrices := metastore.SpotPricesAnalysis(historyPrices, *jsonOutput)
 
-	metastore.PrintPriceRank(sortedInstancePrices, *cutoff, *limit)
+	metastore.PrintPriceRank(sortedInstancePrices, *cutoff, *limit, *jsonOutput)
+}
+
+// JSON 错误输出结构
+type JSONError struct {
+	Error   string `json:"error"`
+	Message string `json:"message"`
+}
+
+// 输出 JSON 格式的错误信息
+func outputJSONError(message, details string) {
+	errorResponse := JSONError{
+		Error:   message,
+		Message: details,
+	}
+
+	jsonData, err := json.MarshalIndent(errorResponse, "", "  ")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "{\"error\":\"Failed to marshal error\",\"message\":\"%s\"}\n", err.Error())
+		return
+	}
+
+	fmt.Println(string(jsonData))
+	os.Exit(1)
 }

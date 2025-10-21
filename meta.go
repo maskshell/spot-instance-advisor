@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	ecsService "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
-	"github.com/fatih/color"
 	"sort"
 	"strings"
 	"time"
+
+	ecsService "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
+	"github.com/fatih/color"
 )
 
 const (
@@ -19,12 +21,12 @@ type MetaStore struct {
 }
 
 // Initialize the instance type
-func (ms *MetaStore) Initialize(region string) {
+func (ms *MetaStore) Initialize(region string, jsonOutput bool) error {
 	req := ecsService.CreateDescribeInstanceTypesRequest()
 	req.RegionId = region
 	resp, err := ms.DescribeInstanceTypes(req)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to DescribeInstanceTypes,because of %v", err))
+		return fmt.Errorf("failed to DescribeInstanceTypes: %v", err)
 	}
 	instanceTypes := resp.InstanceTypes.InstanceType
 
@@ -39,7 +41,7 @@ func (ms *MetaStore) Initialize(region string) {
 	d_req.SpotStrategy = "SpotWithPriceLimit"
 	d_resp, err := ms.DescribeAvailableResource(d_req)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to get available resource,because of %v", err))
+		return fmt.Errorf("failed to get available resource: %v", err)
 	}
 
 	zoneStocks := d_resp.AvailableZones.AvailableZone
@@ -62,11 +64,14 @@ func (ms *MetaStore) Initialize(region string) {
 		}
 	}
 
-	fmt.Printf("Initialize cache ready with %d kinds of instanceTypes\n", len(instanceTypes))
+	if !jsonOutput {
+		fmt.Printf("Initialize cache ready with %d kinds of instanceTypes\n", len(instanceTypes))
+	}
+	return nil
 }
 
 // Get the instanceType with in the range.
-func (ms *MetaStore) FilterInstances(cpu, memory, maxCpu, maxMemory int, family string) (instanceTypes []string) {
+func (ms *MetaStore) FilterInstances(cpu, memory, maxCpu, maxMemory int, family string, jsonOutput bool) (instanceTypes []string) {
 	instanceTypes = make([]string, 0)
 
 	instancesFamily := strings.Split(family, ",")
@@ -85,13 +90,15 @@ func (ms *MetaStore) FilterInstances(cpu, memory, maxCpu, maxMemory int, family 
 		}
 	}
 
-	fmt.Printf("Filter %d of %d kinds of instanceTypes.\n", len(instanceTypes), len(ms.InstanceFamilyCache))
+	if !jsonOutput {
+		fmt.Printf("Filter %d of %d kinds of instanceTypes.\n", len(instanceTypes), len(ms.InstanceFamilyCache))
+	}
 
 	return instanceTypes
 }
 
 // Fetch spot price history
-func (ms *MetaStore) FetchSpotPrices(instanceTypes []string, resolution int) (historyPrices map[string][]ecsService.SpotPriceType) {
+func (ms *MetaStore) FetchSpotPrices(instanceTypes []string, resolution int, jsonOutput bool) (historyPrices map[string][]ecsService.SpotPriceType) {
 
 	historyPrices = make(map[string][]ecsService.SpotPriceType)
 
@@ -102,7 +109,7 @@ func (ms *MetaStore) FetchSpotPrices(instanceTypes []string, resolution int) (hi
 		req.IoOptimized = "optimized"
 		resp, err := ms.DescribeSpotPriceHistory(req)
 
-		resolutionDuration := time.Duration(resolution * -1*24) * time.Hour
+		resolutionDuration := time.Duration(resolution*-1*24) * time.Hour
 		req.StartTime = time.Now().Add(resolutionDuration).Format(TimeLayout)
 		if err != nil {
 			continue
@@ -111,13 +118,15 @@ func (ms *MetaStore) FetchSpotPrices(instanceTypes []string, resolution int) (hi
 		historyPrices[instanceType] = resp.SpotPrices.SpotPriceType
 	}
 
-	fmt.Printf("Fetch %d kinds of InstanceTypes prices successfully.\n", len(instanceTypes))
+	if !jsonOutput {
+		fmt.Printf("Fetch %d kinds of InstanceTypes prices successfully.\n", len(instanceTypes))
+	}
 
 	return historyPrices
 }
 
 // Print spot history sort and rank
-func (ms *MetaStore) SpotPricesAnalysis(historyPrices map[string][]ecsService.SpotPriceType) SortedInstancePrices {
+func (ms *MetaStore) SpotPricesAnalysis(historyPrices map[string][]ecsService.SpotPriceType, jsonOutput bool) SortedInstancePrices {
 	sp := make(SortedInstancePrices, 0)
 	for instanceTypeId, prices := range historyPrices {
 		var meta ecsService.InstanceType
@@ -141,12 +150,19 @@ func (ms *MetaStore) SpotPricesAnalysis(historyPrices map[string][]ecsService.Sp
 		}
 	}
 
-	fmt.Printf("Successfully compare %d kinds of instanceTypes\n", len(sp))
+	if !jsonOutput {
+		fmt.Printf("Successfully compare %d kinds of instanceTypes\n", len(sp))
+	}
 	return sp
 }
 
-func (ms *MetaStore) PrintPriceRank(prices SortedInstancePrices, cutoff int, limit int) {
+func (ms *MetaStore) PrintPriceRank(prices SortedInstancePrices, cutoff int, limit int, jsonOutput bool) {
 	sort.Sort(prices)
+
+	if jsonOutput {
+		ms.printJSONOutput(prices, limit)
+		return
+	}
 
 	color.Green("%30s %20s %15s %15s %15s\n", "InstanceTypeId", "ZoneId", "Price(Core)", "Discount", "ratio")
 
@@ -160,6 +176,36 @@ func (ms *MetaStore) PrintPriceRank(prices SortedInstancePrices, cutoff int, lim
 			color.Blue("%30s %20s %15.4f %15.1f %15.1f\n", price.InstanceTypeId, price.ZoneId, price.PricePerCore, price.Discount, price.Possibility)
 		}
 	}
+}
+
+func (ms *MetaStore) printJSONOutput(prices SortedInstancePrices, limit int) {
+	var jsonResults []JSONOutput
+
+	for index, price := range prices {
+		if index >= limit {
+			break
+		}
+
+		jsonResult := JSONOutput{
+			InstanceTypeId: price.InstanceTypeId,
+			ZoneId:         price.ZoneId,
+			PricePerCore:   price.PricePerCore,
+			Discount:       price.Discount,
+			Possibility:    price.Possibility,
+			CpuCoreCount:   price.CpuCoreCount,
+			MemorySize:     price.MemorySize,
+			InstanceFamily: price.InstanceType.InstanceTypeFamily,
+		}
+		jsonResults = append(jsonResults, jsonResult)
+	}
+
+	jsonData, err := json.MarshalIndent(jsonResults, "", "  ")
+	if err != nil {
+		fmt.Printf("Error marshaling JSON: %v\n", err)
+		return
+	}
+
+	fmt.Println(string(jsonData))
 }
 
 func NewMetaStore(client *ecsService.Client) *MetaStore {

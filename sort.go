@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
-	log "github.com/Sirupsen/logrus"
-	ecsService "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
 	"math"
 	"time"
+
+	ecsService "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
+	log "github.com/sirupsen/logrus"
 )
 
 // data structure of instance prices
@@ -16,6 +17,18 @@ type InstancePrice struct {
 	Price        string
 	Discount     float64
 	Possibility  float64
+}
+
+// JSON output structure
+type JSONOutput struct {
+	InstanceTypeId string  `json:"instanceTypeId"`
+	ZoneId         string  `json:"zoneId"`
+	PricePerCore   float64 `json:"pricePerCore"`
+	Discount       float64 `json:"discount"`
+	Possibility    float64 `json:"possibility"`
+	CpuCoreCount   int     `json:"cpuCoreCount"`
+	MemorySize     float64 `json:"memorySize"`
+	InstanceFamily string  `json:"instanceFamily"`
 }
 
 // sorted structure of
