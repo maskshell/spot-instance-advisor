@@ -25,6 +25,21 @@ build-release:
 	@echo "Release build completed"
 	@ls -la dist/
 
+# Build for all platforms (cross-compilation)
+build-all:
+	@echo "Building for multiple platforms..."
+	@mkdir -p dist
+	# Linux
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GOBUILD) -ldflags="-s -w" -o dist/$(BINARY_NAME)-linux-amd64 -v .
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 $(GOBUILD) -ldflags="-s -w" -o dist/$(BINARY_NAME)-linux-arm64 -v .
+	# macOS
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $(GOBUILD) -ldflags="-s -w" -o dist/$(BINARY_NAME)-darwin-amd64 -v .
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 $(GOBUILD) -ldflags="-s -w" -o dist/$(BINARY_NAME)-darwin-arm64 -v .
+	# Windows
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $(GOBUILD) -ldflags="-s -w" -o dist/$(BINARY_NAME)-windows-amd64.exe -v .
+	@echo "All builds completed"
+	@ls -la dist/
+
 
 
 # Clean build artifacts
@@ -68,6 +83,7 @@ help:
 	@echo "Available targets:"
 	@echo "  build         - Build the binary"
 	@echo "  build-release  - Build optimized release binary"
+	@echo "  build-all     - Build for all platforms (cross-compilation)"
 	@echo "  clean         - Clean build artifacts"
 	@echo "  test          - Run tests"
 	@echo "  test-coverage - Run tests with coverage report"

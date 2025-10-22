@@ -20,19 +20,27 @@ jobs:
         go-version: '1.25.2'
         cache: true
 
-    - name: Build
+    - name: Build for all platforms
       env:
         CGO_ENABLED: 0
       run: |
-        go build -ldflags="-s -w" -o spot-instance-advisor -v .
         mkdir -p dist
-        mv spot-instance-advisor dist/
+        # Linux
+        GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/spot-instance-advisor-linux-amd64 -v .
+        GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/spot-instance-advisor-linux-arm64 -v .
+        # macOS
+        GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/spot-instance-advisor-darwin-amd64 -v .
+        GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/spot-instance-advisor-darwin-arm64 -v .
+        # Windows
+        GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/spot-instance-advisor-windows-amd64.exe -v .
+        echo "All builds completed"
+        ls -la dist/
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: spot-instance-advisor
-        path: dist/spot-instance-advisor
+        name: spot-instance-advisor-multi-platform
+        path: dist/
 
   release:
     needs: build
@@ -46,7 +54,7 @@ jobs:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       with:
-        name: spot-instance-advisor
+        name: spot-instance-advisor-multi-platform
         path: dist
 
     - name: List downloaded files
@@ -54,13 +62,20 @@ jobs:
         echo "Contents of dist directory:"
         ls -la dist/
         echo "File details:"
-        file dist/spot-instance-advisor || echo "File not found"
+        for file in dist/*; do
+          echo "File: $file"
+          file "$file" || echo "File not found"
+        done
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          dist/spot-instance-advisor
+          dist/spot-instance-advisor-linux-amd64
+          dist/spot-instance-advisor-linux-arm64
+          dist/spot-instance-advisor-darwin-amd64
+          dist/spot-instance-advisor-darwin-arm64
+          dist/spot-instance-advisor-windows-amd64.exe
         generate_release_notes: true
         draft: false
         prerelease: false
