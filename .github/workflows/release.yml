@@ -71,11 +71,11 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          dist/spot-instance-advisor-linux-amd64
-          dist/spot-instance-advisor-linux-arm64
-          dist/spot-instance-advisor-darwin-amd64
-          dist/spot-instance-advisor-darwin-arm64
-          dist/spot-instance-advisor-windows-amd64.exe
+        dist/spot-instance-advisor-linux-amd64
+        dist/spot-instance-advisor-linux-arm64
+        dist/spot-instance-advisor-darwin-amd64
+        dist/spot-instance-advisor-darwin-arm64
+        dist/spot-instance-advisor-windows-amd64.exe
         generate_release_notes: true
         draft: false
         prerelease: false
