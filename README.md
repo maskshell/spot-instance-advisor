@@ -29,11 +29,11 @@ A command-line tool for analyzing Alibaba Cloud Spot instance prices and availab
 git clone <repository-url>
 cd spot-instance-advisor
 
-# Build the binary
+# Build the binary (outputs to dist/spot-instance-advisor-OS-ARCH)
 make build
 
-# Or build directly with Go
-go build -o spot-instance-advisor .
+# Or build directly with Go (not recommended for releases)
+go build -o dist/spot-instance-advisor-$(go env GOOS)-$(go env GOARCH) .
 ```
 
 ### Basic Usage

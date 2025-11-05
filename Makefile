@@ -8,20 +8,25 @@ GOMOD=$(GOCMD) mod
 GOFMT=$(GOCMD) fmt
 GOVET=$(GOCMD) vet
 BINARY_NAME=spot-instance-advisor
+# Detect host go env for naming
+OS:=$(shell $(GOCMD) env GOOS)
+ARCH:=$(shell $(GOCMD) env GOARCH)
+EXT:=$(if $(filter $(OS),windows),.exe,)
 
 .PHONY: all build build-release clean test deps fmt vet tidy vendor help
 
 all: deps test build
 
-# Build the binary
+# Build the binary (with OS-ARCH suffix)
 build:
-	$(GOBUILD) -o $(BINARY_NAME) -v .
+	@mkdir -p dist
+	$(GOBUILD) -o dist/$(BINARY_NAME)-$(OS)-$(ARCH)$(EXT) -v .
 
-# Build for release (optimized)
+# Build for release (optimized, with OS-ARCH suffix)
 build-release:
 	@echo "Building optimized release binary..."
 	@mkdir -p dist
-	CGO_ENABLED=0 $(GOBUILD) -ldflags="-s -w" -o dist/$(BINARY_NAME) -v .
+	CGO_ENABLED=0 $(GOBUILD) -ldflags="-s -w" -o dist/$(BINARY_NAME)-$(OS)-$(ARCH)$(EXT) -v .
 	@echo "Release build completed"
 	@ls -la dist/
 
@@ -45,7 +50,6 @@ build-all:
 # Clean build artifacts
 clean:
 	$(GOCLEAN)
-	rm -f $(BINARY_NAME)
 	rm -rf dist/
 
 # Run tests
