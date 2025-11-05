@@ -29,6 +29,7 @@ type JSONOutput struct {
 	CpuCoreCount   int     `json:"cpuCoreCount"`
 	MemorySize     float64 `json:"memorySize"`
 	InstanceFamily string  `json:"instanceFamily"`
+    Arch           string  `json:"arch"`
 }
 
 // sorted structure of

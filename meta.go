@@ -71,7 +71,7 @@ func (ms *MetaStore) Initialize(region string, jsonOutput bool) error {
 }
 
 // Get the instanceType with in the range.
-func (ms *MetaStore) FilterInstances(cpu, memory, maxCpu, maxMemory int, family string, jsonOutput bool) (instanceTypes []string) {
+func (ms *MetaStore) FilterInstances(cpu, memory, maxCpu, maxMemory int, family string, arch string, jsonOutput bool) (instanceTypes []string) {
 	instanceTypes = make([]string, 0)
 
 	instancesFamily := strings.Split(family, ",")
@@ -79,7 +79,12 @@ func (ms *MetaStore) FilterInstances(cpu, memory, maxCpu, maxMemory int, family 
 	for key, instanceType := range ms.InstanceFamilyCache {
 		if instanceType.CpuCoreCount >= cpu && instanceType.CpuCoreCount <= maxCpu &&
 			instanceType.MemorySize >= float64(memory) && instanceType.MemorySize <= float64(maxMemory) {
-
+			// architecture filter when provided
+			if strings.TrimSpace(arch) != "" {
+				if normalizeArch(getInstanceArch(instanceType)) != normalizeArch(arch) {
+					continue
+				}
+			}
 			for _, instanceFamily := range instancesFamily {
 				if strings.Contains(key, instanceFamily) {
 					instanceTypes = append(instanceTypes, key)
@@ -95,6 +100,40 @@ func (ms *MetaStore) FilterInstances(cpu, memory, maxCpu, maxMemory int, family 
 	}
 
 	return instanceTypes
+}
+
+// normalizeArch converts various aliases to linux-style names
+// accepted inputs: x86_64, amd64, x86, X86, ARM, arm64
+func normalizeArch(a string) string {
+	aa := strings.ToLower(strings.TrimSpace(a))
+	switch aa {
+	case "amd64", "x86_64", "x86", "x86-64", "x64":
+		return "x86_64"
+	case "arm64", "aarch64", "arm" /* some apis may return ARM */ :
+		return "arm64"
+	default:
+		return aa
+	}
+}
+
+// getInstanceArch extracts the architecture from the instance type metadata.
+// Prefer the SDK-provided CpuArchitecture when available; otherwise try to infer from the id/family.
+func getInstanceArch(it ecsService.InstanceType) string {
+	// Try field CpuArchitecture if populated by SDK
+	if strings.TrimSpace(it.CpuArchitecture) != "" {
+		return it.CpuArchitecture
+	}
+	// Fallback heuristic using instance type id/family naming conventions
+	id := strings.ToLower(it.InstanceTypeId)
+	fam := strings.ToLower(it.InstanceTypeFamily)
+	// Common ARM families on Alibaba Cloud often contain a trailing 'g' (e.g., c6g) or y-series
+	if strings.Contains(id, ".c6g") || strings.Contains(id, ".g6g") || strings.Contains(id, ".r6g") ||
+		strings.Contains(id, ".c8y") || strings.Contains(id, ".g8y") || strings.Contains(id, ".r8y") ||
+		strings.Contains(fam, "c6g") || strings.Contains(fam, "g6g") || strings.Contains(fam, "r6g") ||
+		strings.Contains(fam, "c8y") || strings.Contains(fam, "g8y") || strings.Contains(fam, "r8y") {
+		return "arm64"
+	}
+	return "x86_64"
 }
 
 // Fetch spot price history
@@ -195,6 +234,7 @@ func (ms *MetaStore) printJSONOutput(prices SortedInstancePrices, limit int) {
 			CpuCoreCount:   price.CpuCoreCount,
 			MemorySize:     price.MemorySize,
 			InstanceFamily: price.InstanceType.InstanceTypeFamily,
+			Arch:           normalizeArch(getInstanceArch(price.InstanceType)),
 		}
 		jsonResults = append(jsonResults, jsonResult)
 	}

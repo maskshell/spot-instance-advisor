@@ -18,6 +18,7 @@ var (
 	maxCpu          = flag.Int("maxcpu", 32, "Max cores of spot instances ")
 	maxMemory       = flag.Int("maxmem", 64, "Max memory of spot instances")
 	family          = flag.String("family", "", "The spot instance family you want (e.g. ecs.n1,ecs.n2)")
+    arch            = flag.String("arch", "", "CPU architecture filter: x86_64 or arm64")
 	cutoff          = flag.Int("cutoff", 2, "Discount of the spot instance prices")
 	limit           = flag.Int("limit", 20, "Limit of the spot instances")
 	resolution      = flag.Int("resolution", 7, "The window of price history analysis")
@@ -49,7 +50,7 @@ func main() {
 		return
 	}
 
-	instanceTypes := metastore.FilterInstances(*cpu, *memory, *maxCpu, *maxMemory, *family, *jsonOutput)
+    instanceTypes := metastore.FilterInstances(*cpu, *memory, *maxCpu, *maxMemory, *family, *arch, *jsonOutput)
 
 	historyPrices := metastore.FetchSpotPrices(instanceTypes, *resolution, *jsonOutput)
 

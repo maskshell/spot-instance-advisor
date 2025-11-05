@@ -68,6 +68,7 @@ go build -o spot-instance-advisor .
 - `--minmem`: Minimum memory in GB (default: 2)
 - `--maxmem`: Maximum memory in GB (default: 64)
 - `--family`: Instance family filter (e.g., ecs.n1,ecs.n2)
+- `--arch`: CPU architecture filter: x86_64 or arm64
 
 ### Analysis Parameters
 
@@ -141,7 +142,8 @@ When using the `--json` flag, the tool outputs structured JSON data:
     "possibility": 0.8,
     "cpuCoreCount": 1,
     "memorySize": 2.0,
-    "instanceFamily": "ecs.n1"
+    "instanceFamily": "ecs.n1",
+    "arch": "x86_64"
   }
 ]
 ```
@@ -156,6 +158,7 @@ When using the `--json` flag, the tool outputs structured JSON data:
 - `cpuCoreCount`: Number of CPU cores
 - `memorySize`: Memory size in GB
 - `instanceFamily`: Instance family identifier
+- `arch`: CPU architecture (x86_64 or arm64)
 
 ## Examples
 
@@ -180,6 +183,7 @@ When using the `--json` flag, the tool outputs structured JSON data:
   --accessKeyId YOUR_KEY \
   --accessKeySecret YOUR_SECRET \
   --family ecs.n1,ecs.n2 \
+  --arch x86_64 \
   --limit 10 \
   --json
 ```

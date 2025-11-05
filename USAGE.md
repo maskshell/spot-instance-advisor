@@ -19,6 +19,7 @@ Spot Instance Advisor 是一个用于分析阿里云 Spot 实例价格和可用�
 - `--minmem`: 最小内存（GB）（默认：2）
 - `--maxmem`: 最大内存（GB）（默认：64）
 - `--family`: 实例族（例如：ecs.n1,ecs.n2）
+- `--arch`: 架构过滤（x86_64 或 arm64）
 
 ### 分析参数
 
@@ -42,7 +43,8 @@ Spot Instance Advisor 是一个用于分析阿里云 Spot 实例价格和可用�
   --mincpu 2 \
   --maxcpu 8 \
   --minmem 4 \
-  --maxmem 16
+  --maxmem 16 \
+  --arch arm64
 ```
 
 ### 2. JSON 格式输出（纯 JSON，无摘要信息）
@@ -89,7 +91,8 @@ Spot Instance Advisor 是一个用于分析阿里云 Spot 实例价格和可用�
     "possibility": 0.8,
     "cpuCoreCount": 1,
     "memorySize": 2.0,
-    "instanceFamily": "ecs.n1"
+    "instanceFamily": "ecs.n1",
+    "arch": "x86_64"
   }
 ]
 ```
@@ -104,6 +107,7 @@ Spot Instance Advisor 是一个用于分析阿里云 Spot 实例价格和可用�
 - `cpuCoreCount`: CPU 核心数
 - `memorySize`: 内存大小（GB）
 - `instanceFamily`: 实例族
+- `arch`: CPU 架构（x86_64 或 arm64）
 
 ## 构建
 
