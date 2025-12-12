@@ -68,6 +68,7 @@ go build -o dist/spot-instance-advisor-$(go env GOOS)-$(go env GOARCH) .
 - `--minmem`: Minimum memory in GB (default: 2)
 - `--maxmem`: Maximum memory in GB (default: 64)
 - `--family`: Instance family filter (e.g., ecs.n1,ecs.n2)
+- `--instanceType`: Specific instance types (comma-separated, e.g., ecs.n1.small,ecs.n2.large). Takes precedence over family parameter.
 - `--arch`: CPU architecture filter: x86_64 or arm64
 
 ### Analysis Parameters
@@ -187,6 +188,25 @@ When using the `--json` flag, the tool outputs structured JSON data:
   --limit 10 \
   --json
 ```
+
+### Analyze Specific Instance Types
+
+```bash
+./spot-instance-advisor \
+  --accessKeyId YOUR_KEY \
+  --accessKeySecret YOUR_SECRET \
+  --instanceType ecs.n1.small,ecs.n2.large \
+  --arch x86_64 \
+  --limit 10 \
+  --json
+```
+
+**Note**: When using `--instanceType`:
+
+- The specified instance types take precedence over `--family` parameter
+- Supports comma-separated multiple instance types
+- **All other filters (CPU, memory, architecture) will be skipped**, directly using the specified instance types
+- Invalid or non-existent instance types will be skipped
 
 ## Contributing
 

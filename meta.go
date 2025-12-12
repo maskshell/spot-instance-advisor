@@ -71,9 +71,32 @@ func (ms *MetaStore) Initialize(region string, jsonOutput bool) error {
 }
 
 // Get the instanceType with in the range.
-func (ms *MetaStore) FilterInstances(cpu, memory, maxCpu, maxMemory int, family string, arch string, jsonOutput bool) (instanceTypes []string) {
+func (ms *MetaStore) FilterInstances(cpu, memory, maxCpu, maxMemory int, family string, instanceType string, arch string, jsonOutput bool) (instanceTypes []string) {
 	instanceTypes = make([]string, 0)
 
+	// If instanceType is specified, use it directly (skip all other filters)
+	if strings.TrimSpace(instanceType) != "" {
+		instanceTypeList := strings.Split(instanceType, ",")
+		for _, it := range instanceTypeList {
+			it = strings.TrimSpace(it)
+			if it == "" {
+				continue
+			}
+			// Verify the instance type exists in cache
+			if _, ok := ms.InstanceFamilyCache[it]; ok {
+				// Skip all filters (CPU, memory, architecture) when instanceType is specified
+				instanceTypes = append(instanceTypes, it)
+			}
+		}
+
+		if !jsonOutput {
+			fmt.Printf("Filter %d of %d kinds of instanceTypes.\n", len(instanceTypes), len(ms.InstanceFamilyCache))
+		}
+
+		return instanceTypes
+	}
+
+	// Otherwise, use family-based filtering (existing logic)
 	instancesFamily := strings.Split(family, ",")
 
 	for key, instanceType := range ms.InstanceFamilyCache {

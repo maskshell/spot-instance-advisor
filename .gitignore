@@ -55,3 +55,6 @@ temp/
 .gocache/
 .gomodcache/
 .gopath/
+
+# AI Agent Rules
+.cursor/

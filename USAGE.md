@@ -19,6 +19,7 @@ Spot Instance Advisor 是一个用于分析阿里云 Spot 实例价格和可用�
 - `--minmem`: 最小内存（GB）（默认：2）
 - `--maxmem`: 最大内存（GB）（默认：64）
 - `--family`: 实例族（例如：ecs.n1,ecs.n2）
+- `--instanceType`: 指定实例类型（逗号分隔，例如：ecs.n1.small,ecs.n2.large）。如果指定此参数，将优先使用此参数，忽略 family 参数
 - `--arch`: 架构过滤（x86_64 或 arm64）
 
 ### 分析参数
@@ -76,6 +77,23 @@ Spot Instance Advisor 是一个用于分析阿里云 Spot 实例价格和可用�
   --family ecs.n1,ecs.n2 \
   --json
 ```
+
+### 4. 指定具体实例类型
+
+```bash
+./spot-instance-advisor \
+  --accessKeyId YOUR_ACCESS_KEY_ID \
+  --accessKeySecret YOUR_ACCESS_KEY_SECRET \
+  --instanceType ecs.n1.small,ecs.n2.large \
+  --json
+```
+
+**注意**: 使用 `--instanceType` 参数时：
+
+- 将优先使用指定的实例类型，忽略 `--family` 参数
+- 支持逗号分隔的多个实例类型
+- **会跳过所有其他过滤条件**（CPU、内存、架构等），直接使用指定的实例类型
+- 如果指定的实例类型不存在，将被跳过
 
 ## JSON 输出格式
 

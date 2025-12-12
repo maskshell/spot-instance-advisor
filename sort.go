@@ -29,7 +29,7 @@ type JSONOutput struct {
 	CpuCoreCount   int     `json:"cpuCoreCount"`
 	MemorySize     float64 `json:"memorySize"`
 	InstanceFamily string  `json:"instanceFamily"`
-    Arch           string  `json:"arch"`
+	Arch           string  `json:"arch"`
 }
 
 // sorted structure of
@@ -87,6 +87,9 @@ func FindLatestPrice(prices []ecsService.SpotPriceType) ecsService.SpotPriceType
 }
 
 func GetPossibility(prices []ecsService.SpotPriceType) float64 {
+	if len(prices) == 0 {
+		return 0.0
+	}
 	variance := 0.0
 	sigma := 0.0
 
