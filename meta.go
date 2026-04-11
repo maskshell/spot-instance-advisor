@@ -8,6 +8,7 @@ import (
 	"time"
 
 	ecsService "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
+	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/fatih/color"
 )
 
@@ -22,13 +23,26 @@ type MetaStore struct {
 
 // Initialize the instance type
 func (ms *MetaStore) Initialize(region string, jsonOutput bool) error {
-	req := ecsService.CreateDescribeInstanceTypesRequest()
-	req.RegionId = region
-	resp, err := ms.DescribeInstanceTypes(req)
-	if err != nil {
-		return fmt.Errorf("failed to DescribeInstanceTypes: %v", err)
+	var instanceTypes []ecsService.InstanceType
+	nextToken := ""
+
+	for {
+		req := ecsService.CreateDescribeInstanceTypesRequest()
+		req.RegionId = region
+		req.MaxResults = requests.NewInteger(100)
+		if nextToken != "" {
+			req.NextToken = nextToken
+		}
+		resp, err := ms.DescribeInstanceTypes(req)
+		if err != nil {
+			return fmt.Errorf("failed to DescribeInstanceTypes: %v", err)
+		}
+		instanceTypes = append(instanceTypes, resp.InstanceTypes.InstanceType...)
+		nextToken = resp.NextToken
+		if nextToken == "" {
+			break
+		}
 	}
-	instanceTypes := resp.InstanceTypes.InstanceType
 
 	for _, instanceType := range instanceTypes {
 		ms.InstanceFamilyCache[instanceType.InstanceTypeId] = instanceType
