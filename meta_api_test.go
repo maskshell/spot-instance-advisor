@@ -17,6 +17,7 @@ type fakeEcsClient struct {
 
 	spotPages     []fakePage
 	spotErr       error
+	failTypes     map[string]bool // per-instance-type forced errors (partial-failure test)
 	spotCalls     int
 	lastStartTime string
 }
@@ -43,6 +44,9 @@ func (f *fakeEcsClient) DescribeSpotPriceHistory(req *ecsService.DescribeSpotPri
 	f.lastStartTime = req.StartTime
 	if f.spotErr != nil {
 		return nil, f.spotErr
+	}
+	if f.failTypes[req.InstanceType] {
+		return nil, fmt.Errorf("throttled: %s", req.InstanceType)
 	}
 	if f.spotCalls > len(f.spotPages) {
 		return &ecsService.DescribeSpotPriceHistoryResponse{}, nil
@@ -179,5 +183,33 @@ func TestFetchSpotPrices_InvalidResolution(t *testing.T) {
 	ms := NewMetaStore(&fakeEcsClient{})
 	if _, err := ms.FetchSpotPrices([]string{"ecs.n1.small"}, 0, true); err == nil {
 		t.Error("expected an error for resolution <= 0")
+	}
+}
+
+// TestFetchSpotPrices_PartialFailure locks in the subtler half of M1: when SOME
+// (not all) instance types fail, the successful ones are still returned and the
+// error is nil. This is the common real-world path (one type throttles) that the
+// all-fail test does not cover.
+func TestFetchSpotPrices_PartialFailure(t *testing.T) {
+	fake := &fakeEcsClient{
+		spotPages: []fakePage{
+			{prices: []ecsService.SpotPriceType{{Timestamp: "2024-01-01T10:00:00Z", SpotPrice: 0.1, OriginPrice: 1.0, ZoneId: "cn-hangzhou-a"}}, nextOffset: 0},
+		},
+		failTypes: map[string]bool{"ecs.fail": true},
+	}
+	ms := NewMetaStore(fake)
+
+	hist, err := ms.FetchSpotPrices([]string{"ecs.ok", "ecs.fail"}, 7, true)
+	if err != nil {
+		t.Fatalf("partial failure must NOT return an error, got %v", err)
+	}
+	if len(hist) != 1 {
+		t.Fatalf("expected 1 successful entry, got %d: %v", len(hist), hist)
+	}
+	if _, ok := hist["ecs.ok"]; !ok {
+		t.Error("the successful instance type ecs.ok should be in the results")
+	}
+	if _, ok := hist["ecs.fail"]; ok {
+		t.Error("the failed instance type ecs.fail should not be in the results")
 	}
 }

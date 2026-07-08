@@ -35,7 +35,7 @@ func TestValidateFlags(t *testing.T) {
 		{"resolution negative", func() { *resolution = -3 }},
 		{"limit zero", func() { *limit = 0 }},
 		{"limit negative", func() { *limit = -5 }},
-		{"cutoff zero", func() { *cutoff = 0 }},
+		{"cutoff negative", func() { *cutoff = -1 }},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -45,6 +45,14 @@ func TestValidateFlags(t *testing.T) {
 				t.Errorf("expected validation error for %s", c.name)
 			}
 		})
+	}
+
+	// cutoff == 0 is ALLOWED (legitimate "highlight only free instances" filter:
+	// Discount is 0 when SpotPrice is 0); only negatives are rejected.
+	restore()
+	*cutoff = 0
+	if err := validateFlags(); err != nil {
+		t.Errorf("cutoff=0 should be allowed, got %v", err)
 	}
 }
 

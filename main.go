@@ -79,8 +79,12 @@ func resolveCredentials(flagID, flagSecret string) (string, string) {
 
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
-		if strings.TrimSpace(v) != "" {
-			return v
+		// Return the TRIMMED value: the emptiness test uses TrimSpace, so a value
+		// that is non-empty only due to surrounding whitespace must still be
+		// normalized before use — otherwise a mis-pasted credential with stray
+		// spaces passes the check but fails at the API with a confusing auth error.
+		if trimmed := strings.TrimSpace(v); trimmed != "" {
+			return trimmed
 		}
 	}
 	return ""
@@ -108,9 +112,11 @@ func validateFlags() error {
 	if *limit <= 0 {
 		return fmt.Errorf("limit must be positive (got %d)", *limit)
 	}
-	if *cutoff <= 0 {
-		return fmt.Errorf("cutoff must be positive (got %d)", *cutoff)
+	if *cutoff < 0 {
+		return fmt.Errorf("cutoff must not be negative (got %d)", *cutoff)
 	}
+	// cutoff == 0 is a legitimate filter ("highlight only free instances" —
+	// Discount is 0 when SpotPrice is 0), so only negatives are rejected.
 	return nil
 }
 

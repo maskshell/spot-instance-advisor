@@ -207,7 +207,6 @@ func (ms *MetaStore) FetchSpotPrices(instanceTypes []string, resolution int, jso
 	startTime := endTime.AddDate(0, 0, -resolution)
 
 	historyPrices := make(map[string][]ecsService.SpotPriceType)
-	failures := 0
 
 	for _, instanceType := range instanceTypes {
 		req := ecsService.CreateDescribeSpotPriceHistoryRequest()
@@ -226,7 +225,6 @@ func (ms *MetaStore) FetchSpotPrices(instanceTypes []string, resolution int, jso
 			req.Offset = requests.NewInteger(offset)
 			resp, err := ms.DescribeSpotPriceHistory(req)
 			if err != nil {
-				failures++
 				// Warnings go to stderr so JSON output (stdout) stays clean yet
 				// the signal is visible in both table and JSON modes.
 				fmt.Fprintf(os.Stderr, "Warning: failed to fetch spot prices for %s: %v\n", instanceType, err)

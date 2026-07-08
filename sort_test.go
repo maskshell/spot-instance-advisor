@@ -345,33 +345,39 @@ func TestFindLatestPrice_AllMalformed(t *testing.T) {
 
 // TestCreateInstancePrice_RejectsInvalidInputs locks in the H3 follow-up:
 // rows whose ranking inputs are missing/invalid are rejected (ok=false) so they
-// are dropped from the ranking instead of mis-ranking as a "best deal" via a
-// zero sentinel. This also keeps NaN/Inf out of the comparator and JSON.
+// are dropped instead of mis-ranking via a zero sentinel. Each guard is exercised
+// INDEPENDENTLY — only one dimension is invalid per case, the rest valid — so a
+// removed or broken guard actually fails its case (no conflation, per the hetero
+// review).
 func TestCreateInstancePrice_RejectsInvalidInputs(t *testing.T) {
-	// CpuCoreCount == 0 and OriginPrice == 0 must be rejected, not divided.
-	zeroCpu := ecsService.InstanceType{InstanceTypeId: "ecs.weird", CpuCoreCount: 0}
-	prices := []ecsService.SpotPriceType{
-		{Timestamp: "2024-01-01T10:00:00Z", SpotPrice: 0.15, OriginPrice: 0},
-	}
-	if _, ok := CreateInstancePrice(zeroCpu, "cn-hangzhou-a", prices); ok {
-		t.Error("expected CpuCoreCount=0 / OriginPrice=0 to be rejected, not ranked")
+	validMeta := ecsService.InstanceType{InstanceTypeId: "ecs.valid", InstanceTypeFamily: "ecs.valid", CpuCoreCount: 2}
+	validPrice := ecsService.SpotPriceType{Timestamp: "2024-01-01T10:00:00Z", SpotPrice: 0.15, OriginPrice: 1.0}
+
+	// Guard 1: CpuCoreCount == 0 (metadata otherwise valid, price valid).
+	if _, ok := CreateInstancePrice(
+		ecsService.InstanceType{InstanceTypeId: "ecs.weird", CpuCoreCount: 0},
+		"cn-hangzhou-a", []ecsService.SpotPriceType{validPrice}); ok {
+		t.Error("CpuCoreCount=0 must be rejected")
 	}
 
-	// No parseable timestamp (FindLatestPrice found nothing valid) is rejected.
-	if _, ok := CreateInstancePrice(zeroCpu, "cn-hangzhou-a",
-		[]ecsService.SpotPriceType{{Timestamp: "bad", SpotPrice: 0.1, OriginPrice: 1.0}}); ok {
-		t.Error("expected an unparseable-timestamp-only input to be rejected")
+	// Guard 2: OriginPrice == 0 (metadata + timestamp valid).
+	if _, ok := CreateInstancePrice(validMeta, "cn-hangzhou-a",
+		[]ecsService.SpotPriceType{{Timestamp: "2024-01-01T10:00:00Z", SpotPrice: 0.15, OriginPrice: 0}}); ok {
+		t.Error("OriginPrice=0 must be rejected")
 	}
 
-	// A genuinely free spot (SpotPrice==0, but valid metadata) is ACCEPTED and
-	// legitimately ranks first — only missing data is rejected, not real zeros.
-	freeMeta := ecsService.InstanceType{InstanceTypeId: "ecs.free", CpuCoreCount: 2}
-	freePrices := []ecsService.SpotPriceType{
-		{Timestamp: "2024-01-01T10:00:00Z", SpotPrice: 0, OriginPrice: 1.0},
+	// Guard 3: no parseable timestamp (metadata + price fields valid).
+	if _, ok := CreateInstancePrice(validMeta, "cn-hangzhou-a",
+		[]ecsService.SpotPriceType{{Timestamp: "not-a-date", SpotPrice: 0.15, OriginPrice: 1.0}}); ok {
+		t.Error("an unparseable-timestamp-only input must be rejected")
 	}
-	ip, ok := CreateInstancePrice(freeMeta, "cn-hangzhou-a", freePrices)
+
+	// Negative control: a genuinely free spot (SpotPrice==0, otherwise valid) is
+	// ACCEPTED and legitimately ranks first — only MISSING data is rejected.
+	ip, ok := CreateInstancePrice(validMeta, "cn-hangzhou-a",
+		[]ecsService.SpotPriceType{{Timestamp: "2024-01-01T10:00:00Z", SpotPrice: 0, OriginPrice: 1.0}})
 	if !ok {
-		t.Fatal("expected a free-but-valid instance to be accepted")
+		t.Fatal("a free-but-valid instance must be accepted")
 	}
 	if ip.PricePerCore != 0 || ip.Discount != 0 {
 		t.Errorf("free instance should have PricePerCore=0 and Discount=0, got %f/%f", ip.PricePerCore, ip.Discount)
