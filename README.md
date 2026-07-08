@@ -1,7 +1,7 @@
 # Spot Instance Advisor
 
 [![Go Version](https://img.shields.io/badge/Go-1.25.2-blue.svg)](https://golang.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Go Modules](https://img.shields.io/badge/Go%20Modules-Enabled-blue.svg)](go.mod)
 
 A command-line tool for analyzing Alibaba Cloud Spot instance prices and availability. This tool helps you find the most cost-effective Spot instances based on historical price data and availability patterns.
@@ -218,7 +218,7 @@ When using the `--json` flag, the tool outputs structured JSON data:
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License, Version 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
