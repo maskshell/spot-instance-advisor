@@ -173,25 +173,18 @@ func TestGetPossibility(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := GetPossibility(tt.prices)
-			if tt.name == "empty prices" {
+			switch tt.name {
+			case "empty prices", "single price", "multiple prices - stable":
+				// Variance is exactly 0 for these inputs.
 				if result != tt.expected {
 					t.Errorf("Expected %f, got %f", tt.expected, result)
 				}
-			} else if tt.name == "single price" {
-				if result != tt.expected {
-					t.Errorf("Expected %f, got %f", tt.expected, result)
-				}
-			} else if tt.name == "multiple prices - stable" {
-				if result != tt.expected {
-					t.Errorf("Expected %f, got %f", tt.expected, result)
-				}
-			} else if tt.name == "multiple prices - varying" {
-				// For varying prices, just check it's positive and reasonable
-				if result <= 0 {
-					t.Errorf("Expected positive value, got %f", result)
-				}
-				if result > 1.0 {
-					t.Errorf("Expected reasonable value (< 1.0), got %f", result)
+			case "multiple prices - varying":
+				// deviations from 0.1*OriginPrice: 0.0, 0.1, 0.2
+				// sigma = sqrt((0 + 0.01 + 0.04) / 3) ≈ 0.1291. Tight tolerance
+				// catches a formula regression (previously only 0 < x < 1).
+				if result < 0.128 || result > 0.130 {
+					t.Errorf("Expected sigma ≈ 0.129, got %f", result)
 				}
 			}
 		})
@@ -227,7 +220,10 @@ func TestCreateInstancePrice(t *testing.T) {
 		},
 	}
 
-	result := CreateInstancePrice(meta, "cn-hangzhou-a", prices)
+	result, ok := CreateInstancePrice(meta, "cn-hangzhou-a", prices)
+	if !ok {
+		t.Fatal("expected CreateInstancePrice to accept valid inputs")
+	}
 
 	if result.InstanceTypeId != "ecs.n1.small" {
 		t.Errorf("Expected InstanceTypeId ecs.n1.small, got %s", result.InstanceTypeId)
@@ -303,5 +299,81 @@ func TestSortedInstancePrices(t *testing.T) {
 		if prices[i].InstanceTypeId != expected {
 			t.Errorf("After sorting, prices[%d] should be %s, got %s", i, expected, prices[i].InstanceTypeId)
 		}
+	}
+}
+
+// TestFindLatestPrice_MalformedTimestamp locks in H2: a single bad timestamp
+// is skipped (not fatal) and the latest valid entry is still returned.
+func TestFindLatestPrice_MalformedTimestamp(t *testing.T) {
+	prices := []ecsService.SpotPriceType{
+		{Timestamp: "not-a-date", SpotPrice: 0.9, OriginPrice: 1.0},
+		{Timestamp: "2024-01-01T10:00:00Z", SpotPrice: 0.1, OriginPrice: 1.0},
+		{Timestamp: "2024-01-03T10:00:00Z", SpotPrice: 0.2, OriginPrice: 1.0},
+		{Timestamp: "", SpotPrice: 0.9, OriginPrice: 1.0},
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("FindLatestPrice panicked on a malformed timestamp: %v", r)
+		}
+	}()
+
+	result := FindLatestPrice(prices)
+	if result.Timestamp != "2024-01-03T10:00:00Z" {
+		t.Errorf("expected the latest valid timestamp, got %q", result.Timestamp)
+	}
+}
+
+// TestFindLatestPrice_AllMalformed returns a zero value (no panic) when no
+// timestamp parses.
+func TestFindLatestPrice_AllMalformed(t *testing.T) {
+	prices := []ecsService.SpotPriceType{
+		{Timestamp: "bad", SpotPrice: 0.1},
+		{Timestamp: "also-bad", SpotPrice: 0.2},
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("FindLatestPrice panicked: %v", r)
+		}
+	}()
+
+	if result := FindLatestPrice(prices); result.Timestamp != "" {
+		t.Errorf("expected zero value when all timestamps are malformed, got %q", result.Timestamp)
+	}
+}
+
+// TestCreateInstancePrice_RejectsInvalidInputs locks in the H3 follow-up:
+// rows whose ranking inputs are missing/invalid are rejected (ok=false) so they
+// are dropped from the ranking instead of mis-ranking as a "best deal" via a
+// zero sentinel. This also keeps NaN/Inf out of the comparator and JSON.
+func TestCreateInstancePrice_RejectsInvalidInputs(t *testing.T) {
+	// CpuCoreCount == 0 and OriginPrice == 0 must be rejected, not divided.
+	zeroCpu := ecsService.InstanceType{InstanceTypeId: "ecs.weird", CpuCoreCount: 0}
+	prices := []ecsService.SpotPriceType{
+		{Timestamp: "2024-01-01T10:00:00Z", SpotPrice: 0.15, OriginPrice: 0},
+	}
+	if _, ok := CreateInstancePrice(zeroCpu, "cn-hangzhou-a", prices); ok {
+		t.Error("expected CpuCoreCount=0 / OriginPrice=0 to be rejected, not ranked")
+	}
+
+	// No parseable timestamp (FindLatestPrice found nothing valid) is rejected.
+	if _, ok := CreateInstancePrice(zeroCpu, "cn-hangzhou-a",
+		[]ecsService.SpotPriceType{{Timestamp: "bad", SpotPrice: 0.1, OriginPrice: 1.0}}); ok {
+		t.Error("expected an unparseable-timestamp-only input to be rejected")
+	}
+
+	// A genuinely free spot (SpotPrice==0, but valid metadata) is ACCEPTED and
+	// legitimately ranks first — only missing data is rejected, not real zeros.
+	freeMeta := ecsService.InstanceType{InstanceTypeId: "ecs.free", CpuCoreCount: 2}
+	freePrices := []ecsService.SpotPriceType{
+		{Timestamp: "2024-01-01T10:00:00Z", SpotPrice: 0, OriginPrice: 1.0},
+	}
+	ip, ok := CreateInstancePrice(freeMeta, "cn-hangzhou-a", freePrices)
+	if !ok {
+		t.Fatal("expected a free-but-valid instance to be accepted")
+	}
+	if ip.PricePerCore != 0 || ip.Discount != 0 {
+		t.Errorf("free instance should have PricePerCore=0 and Discount=0, got %f/%f", ip.PricePerCore, ip.Discount)
 	}
 }

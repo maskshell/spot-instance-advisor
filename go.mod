@@ -5,7 +5,6 @@ go 1.25.2
 require (
 	github.com/aliyun/alibaba-cloud-sdk-go v1.63.107
 	github.com/fatih/color v1.18.0
-	github.com/sirupsen/logrus v1.9.3
 )
 
 require (

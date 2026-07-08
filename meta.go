@@ -3,12 +3,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
 
-	ecsService "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
+	ecsService "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
 	"github.com/fatih/color"
 )
 
@@ -16,8 +17,20 @@ const (
 	TimeLayout = "2006-01-02T15:04:05Z"
 )
 
+// ecsAPI is the subset of the Aliyun ECS client surface this tool uses.
+// Declaring it as an interface (rather than embedding *ecsService.Client
+// directly) lets tests inject a fake client to exercise the API-dependent
+// paths: Initialize (instance-type + availability fetch) and FetchSpotPrices
+// (paginated spot price history). The concrete *ecsService.Client satisfies
+// ecsAPI via Go's structural typing.
+type ecsAPI interface {
+	DescribeInstanceTypes(*ecsService.DescribeInstanceTypesRequest) (*ecsService.DescribeInstanceTypesResponse, error)
+	DescribeAvailableResource(*ecsService.DescribeAvailableResourceRequest) (*ecsService.DescribeAvailableResourceResponse, error)
+	DescribeSpotPriceHistory(*ecsService.DescribeSpotPriceHistoryRequest) (*ecsService.DescribeSpotPriceHistoryResponse, error)
+}
+
 type MetaStore struct {
-	*ecsService.Client
+	ecsAPI
 	InstanceFamilyCache map[string]ecsService.InstanceType
 }
 
@@ -58,28 +71,31 @@ func (ms *MetaStore) Initialize(region string, jsonOutput bool) error {
 		return fmt.Errorf("failed to get available resource: %v", err)
 	}
 
+	// Build a set of instance type ids that have spot availability in at least
+	// one zone. Guards each AvailableResource slice (a sold-out / empty zone
+	// returns an empty slice and the old code indexed [0] unconditionally,
+	// panicking) and turns the O(N*Z*R) nested scan into an O(N+Z*R) set
+	// membership check.
 	zoneStocks := d_resp.AvailableZones.AvailableZone
-
-	for instanceTypeId := range ms.InstanceFamilyCache {
-		found := 0
-		for _, zoneStock := range zoneStocks {
-			for _, resource := range zoneStock.AvailableResources.AvailableResource[0].SupportedResources.SupportedResource {
-				if resource.Value == instanceTypeId {
-					found = 1
-					break
-				}
-			}
-			if found == 1 {
-				break
+	available := make(map[string]struct{})
+	for _, zoneStock := range zoneStocks {
+		if len(zoneStock.AvailableResources.AvailableResource) == 0 {
+			continue
+		}
+		for _, resource := range zoneStock.AvailableResources.AvailableResource[0].SupportedResources.SupportedResource {
+			if resource.Value != "" {
+				available[resource.Value] = struct{}{}
 			}
 		}
-		if found == 0 {
+	}
+	for instanceTypeId := range ms.InstanceFamilyCache {
+		if _, ok := available[instanceTypeId]; !ok {
 			delete(ms.InstanceFamilyCache, instanceTypeId)
 		}
 	}
 
 	if !jsonOutput {
-		fmt.Printf("Initialize cache ready with %d kinds of instanceTypes\n", len(instanceTypes))
+		fmt.Printf("Initialize cache ready with %d kinds of instanceTypes\n", len(ms.InstanceFamilyCache))
 	}
 	return nil
 }
@@ -173,32 +189,71 @@ func getInstanceArch(it ecsService.InstanceType) string {
 	return "x86_64"
 }
 
-// Fetch spot price history
-func (ms *MetaStore) FetchSpotPrices(instanceTypes []string, resolution int, jsonOutput bool) (historyPrices map[string][]ecsService.SpotPriceType) {
+// FetchSpotPrices retrieves spot price history for each instance type over the
+// last `resolution` days, paginating the DescribeSpotPriceHistory API fully
+// (it returns only one page at a time keyed by Offset/NextOffset).
+//
+// StartTime/EndTime are set BEFORE the call so the resolution window is
+// actually transmitted (previously StartTime was assigned after the call, making
+// --resolution a no-op). Per-instance fetch failures are reported on stderr
+// (table mode); the returned error is non-nil only when every instance type
+// failed, so a single transient error no longer silently empties the output.
+func (ms *MetaStore) FetchSpotPrices(instanceTypes []string, resolution int, jsonOutput bool) (map[string][]ecsService.SpotPriceType, error) {
+	if resolution <= 0 {
+		return nil, fmt.Errorf("resolution must be a positive number of days, got %d", resolution)
+	}
 
-	historyPrices = make(map[string][]ecsService.SpotPriceType)
+	endTime := time.Now()
+	startTime := endTime.AddDate(0, 0, -resolution)
+
+	historyPrices := make(map[string][]ecsService.SpotPriceType)
+	failures := 0
 
 	for _, instanceType := range instanceTypes {
 		req := ecsService.CreateDescribeSpotPriceHistoryRequest()
 		req.NetworkType = "vpc"
 		req.InstanceType = instanceType
 		req.IoOptimized = "optimized"
-		resp, err := ms.DescribeSpotPriceHistory(req)
+		req.StartTime = startTime.Format(TimeLayout)
+		req.EndTime = endTime.Format(TimeLayout)
 
-		resolutionDuration := time.Duration(resolution*-1*24) * time.Hour
-		req.StartTime = time.Now().Add(resolutionDuration).Format(TimeLayout)
-		if err != nil {
-			continue
+		// Paginate: the API returns a page plus NextOffset (0 == no more pages).
+		// Also break on an empty page to avoid an infinite loop if the API ever
+		// returns a non-zero NextOffset with no data.
+		var collected []ecsService.SpotPriceType
+		offset := 0
+		for {
+			req.Offset = requests.NewInteger(offset)
+			resp, err := ms.DescribeSpotPriceHistory(req)
+			if err != nil {
+				failures++
+				// Warnings go to stderr so JSON output (stdout) stays clean yet
+				// the signal is visible in both table and JSON modes.
+				fmt.Fprintf(os.Stderr, "Warning: failed to fetch spot prices for %s: %v\n", instanceType, err)
+				break
+			}
+			collected = append(collected, resp.SpotPrices.SpotPriceType...)
+			if resp.NextOffset == 0 || len(resp.SpotPrices.SpotPriceType) == 0 {
+				break
+			}
+			if resp.NextOffset <= offset {
+				break // offset not advancing; guard against a stuck NextOffset response
+			}
+			offset = resp.NextOffset
 		}
-
-		historyPrices[instanceType] = resp.SpotPrices.SpotPriceType
+		if len(collected) > 0 {
+			historyPrices[instanceType] = collected
+		}
 	}
 
 	if !jsonOutput {
-		fmt.Printf("Fetch %d kinds of InstanceTypes prices successfully.\n", len(instanceTypes))
+		fmt.Printf("Fetched spot prices for %d of %d instanceTypes.\n", len(historyPrices), len(instanceTypes))
 	}
 
-	return historyPrices
+	if len(instanceTypes) > 0 && len(historyPrices) == 0 {
+		return historyPrices, fmt.Errorf("failed to fetch spot prices for all %d instance types", len(instanceTypes))
+	}
+	return historyPrices, nil
 }
 
 // Print spot history sort and rank
@@ -221,7 +276,10 @@ func (ms *MetaStore) SpotPricesAnalysis(historyPrices map[string][]ecsService.Sp
 		}
 
 		for zoneId, price := range priceAZMap {
-			ip := CreateInstancePrice(meta, zoneId, price)
+			ip, ok := CreateInstancePrice(meta, zoneId, price)
+			if !ok {
+				continue
+			}
 			sp = append(sp, ip)
 		}
 	}
@@ -270,7 +328,7 @@ func (ms *MetaStore) printJSONOutput(prices SortedInstancePrices, limit int) {
 			Possibility:    price.Possibility,
 			CpuCoreCount:   price.CpuCoreCount,
 			MemorySize:     price.MemorySize,
-			InstanceFamily: price.InstanceType.InstanceTypeFamily,
+			InstanceFamily: price.InstanceTypeFamily,
 			Arch:           normalizeArch(getInstanceArch(price.InstanceType)),
 		}
 		jsonResults = append(jsonResults, jsonResult)
@@ -278,16 +336,16 @@ func (ms *MetaStore) printJSONOutput(prices SortedInstancePrices, limit int) {
 
 	jsonData, err := json.MarshalIndent(jsonResults, "", "  ")
 	if err != nil {
-		fmt.Printf("Error marshaling JSON: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error marshaling JSON: %v\n", err)
 		return
 	}
 
 	fmt.Println(string(jsonData))
 }
 
-func NewMetaStore(client *ecsService.Client) *MetaStore {
+func NewMetaStore(client ecsAPI) *MetaStore {
 	return &MetaStore{
-		Client:              client,
+		ecsAPI:              client,
 		InstanceFamilyCache: make(map[string]ecsService.InstanceType),
 	}
 }

@@ -539,3 +539,33 @@ func TestSpotPricesAnalysis_MultipleZones(t *testing.T) {
 		t.Error("Expected result for cn-hangzhou-b")
 	}
 }
+
+// TestSpotPricesAnalysis_SkipsInvalidMetadata locks in the H3 follow-up: a
+// cached instance type with missing ranking inputs (CpuCoreCount == 0) is
+// dropped from the results instead of sorting to the top as the "cheapest".
+func TestSpotPricesAnalysis_SkipsInvalidMetadata(t *testing.T) {
+	ms := &MetaStore{
+		InstanceFamilyCache: map[string]ecsService.InstanceType{
+			"ecs.valid":  {InstanceTypeId: "ecs.valid", InstanceTypeFamily: "ecs.valid", CpuCoreCount: 2, MemorySize: 4.0},
+			"ecs.broken": {InstanceTypeId: "ecs.broken", InstanceTypeFamily: "ecs.broken", CpuCoreCount: 0, MemorySize: 4.0},
+		},
+	}
+
+	historyPrices := map[string][]ecsService.SpotPriceType{
+		"ecs.valid": {
+			{Timestamp: "2024-01-01T10:00:00Z", SpotPrice: 0.1, OriginPrice: 1.0, ZoneId: "cn-hangzhou-a"},
+		},
+		"ecs.broken": {
+			{Timestamp: "2024-01-01T10:00:00Z", SpotPrice: 0.1, OriginPrice: 1.0, ZoneId: "cn-hangzhou-a"},
+		},
+	}
+
+	result := ms.SpotPricesAnalysis(historyPrices, true)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 result (invalid-metadata row excluded), got %d: %+v", len(result), result)
+	}
+	if result[0].InstanceTypeId != "ecs.valid" {
+		t.Errorf("expected only ecs.valid to remain, got %s", result[0].InstanceTypeId)
+	}
+}
