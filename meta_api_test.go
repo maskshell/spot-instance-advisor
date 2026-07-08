@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	ecsService "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
 )
@@ -20,6 +21,7 @@ type fakeEcsClient struct {
 	failTypes     map[string]bool // per-instance-type forced errors (partial-failure test)
 	spotCalls     int
 	lastStartTime string
+	lastEndTime   string
 }
 
 type fakePage struct {
@@ -42,6 +44,7 @@ func (f *fakeEcsClient) DescribeAvailableResource(*ecsService.DescribeAvailableR
 func (f *fakeEcsClient) DescribeSpotPriceHistory(req *ecsService.DescribeSpotPriceHistoryRequest) (*ecsService.DescribeSpotPriceHistoryResponse, error) {
 	f.spotCalls++
 	f.lastStartTime = req.StartTime
+	f.lastEndTime = req.EndTime
 	if f.spotErr != nil {
 		return nil, f.spotErr
 	}
@@ -160,6 +163,19 @@ func TestFetchSpotPrices_PaginatesAndSetsStartTime(t *testing.T) {
 	}
 	if fake.lastStartTime == "" {
 		t.Error("StartTime must be set on the request before the call (was a no-op before the fix)")
+	}
+	// EndTime must be set AND strictly in the past (UTC): the real Aliyun API
+	// rejects EndTime >= now with InvalidParams.EndTime, and formatting local
+	// time with a 'Z' suffix mislabels the zone (a future EndTime east of UTC).
+	if fake.lastEndTime == "" {
+		t.Fatal("EndTime must be set on the request")
+	}
+	end, err := time.Parse(time.RFC3339, fake.lastEndTime)
+	if err != nil {
+		t.Fatalf("EndTime must be a parseable RFC3339 timestamp, got %q: %v", fake.lastEndTime, err)
+	}
+	if !end.Before(time.Now().UTC()) {
+		t.Errorf("EndTime must be strictly in the past (UTC), got %v", end)
 	}
 
 	got := hist["ecs.n1.small"]

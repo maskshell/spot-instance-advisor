@@ -203,7 +203,11 @@ func (ms *MetaStore) FetchSpotPrices(instanceTypes []string, resolution int, jso
 		return nil, fmt.Errorf("resolution must be a positive number of days, got %d", resolution)
 	}
 
-	endTime := time.Now()
+	// EndTime must be strictly less than "now" — the API rejects EndTime >= now
+	// with InvalidParams.EndTime. Use UTC so the 'Z' layout suffix is truthful:
+	// formatting local time with a Z label mislabels the zone and, east of UTC,
+	// submits a future EndTime. The 1-minute buffer absorbs clock skew + latency.
+	endTime := time.Now().UTC().Add(-time.Minute)
 	startTime := endTime.AddDate(0, 0, -resolution)
 
 	historyPrices := make(map[string][]ecsService.SpotPriceType)
