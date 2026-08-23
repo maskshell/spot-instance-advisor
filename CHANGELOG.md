@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-08-23
+
+### Added
+
+- **Environment variable credentials**: Access keys can be provided via `ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS_KEY_SECRET` (or `ALIBABA_CLOUD_ACCESS_KEY_ID` / `ALIBABA_CLOUD_ACCESS_KEY_SECRET`) instead of command-line flags, keeping the secret out of argv / `ps` / shell history / CI logs. Explicit flags take precedence; whitespace-only values fall through.
+- **Flag validation**: Invalid numeric ranges (e.g. `--limit -5`, `--mincpu 32 --maxcpu 1`, `--resolution 0`) now produce a clear error instead of silently empty output. `--cutoff 0` is allowed ("highlight only free instances").
+
+### Fixed
+
+- **Spot price history pagination**: `DescribeSpotPriceHistory` results are now fully paginated via `Offset`/`NextOffset`. Previously only the first page was fetched — and the API returns the oldest entries first — so the "latest" spot price and the stability score were computed on a truncated, stale sample.
+- **`--resolution` takes effect**: the analysis window is now transmitted to the API (`StartTime`/`EndTime` set before the call, in UTC with a past buffer to satisfy the API's `EndTime < now` rule). Previously the window was assigned after the request was sent and silently ignored.
+- **No more panics on sold-out zones**: an empty `AvailableResource` list (sold-out / out-of-stock zone) no longer crashes during initialization.
+- **No more panics on malformed timestamps**: a single unparseable timestamp in the API response is skipped instead of terminating the CLI.
+- **Invalid instance data no longer mis-ranks**: rows with missing ranking inputs (`CpuCoreCount <= 0`, `OriginPrice <= 0`, or no valid timestamp) are excluded from the ranking instead of sorting to the top as bogus "best deals"; `NaN`/`Infinity` can no longer reach the sort comparator or the JSON output.
+- **Fetch failures are surfaced**: per-instance failures warn on stderr (table and JSON modes); a hard error is returned only when every instance type fails. Progress messages report actual fetched/filtered counts.
+
+### Changed
+
+- Runtime errors print a clean message and exit 1 (JSON mode emits a JSON error object) instead of dumping a Go stack trace via `panic()`.
+- Availability filtering rewritten as an O(N+Z·R) set-membership check (was O(N·Z·R) nested scan).
+- Removed the unused `logrus` dependency.
+
+### Documentation
+
+- Corrected the license badge and notice from MIT to Apache-2.0, matching the actual LICENSE file.
+
+---
+
 ## [1.0.3] - 2026-04-11
 
 ### Fixed
