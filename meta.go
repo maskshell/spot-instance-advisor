@@ -46,7 +46,9 @@ func (ms *MetaStore) Initialize(region string, jsonOutput bool) error {
 		if nextToken != "" {
 			req.NextToken = nextToken
 		}
-		resp, err := ms.DescribeInstanceTypes(req)
+		resp, err := callWithRetry("DescribeInstanceTypes", func() (*ecsService.DescribeInstanceTypesResponse, error) {
+			return ms.DescribeInstanceTypes(req)
+		})
 		if err != nil {
 			return fmt.Errorf("failed to DescribeInstanceTypes: %v", err)
 		}
@@ -66,7 +68,9 @@ func (ms *MetaStore) Initialize(region string, jsonOutput bool) error {
 	d_req.DestinationResource = "InstanceType"
 	d_req.InstanceChargeType = "PostPaid"
 	d_req.SpotStrategy = "SpotWithPriceLimit"
-	d_resp, err := ms.DescribeAvailableResource(d_req)
+	d_resp, err := callWithRetry("DescribeAvailableResource", func() (*ecsService.DescribeAvailableResourceResponse, error) {
+		return ms.DescribeAvailableResource(d_req)
+	})
 	if err != nil {
 		return fmt.Errorf("failed to get available resource: %v", err)
 	}
@@ -227,7 +231,9 @@ func (ms *MetaStore) FetchSpotPrices(instanceTypes []string, resolution int, jso
 		offset := 0
 		for {
 			req.Offset = requests.NewInteger(offset)
-			resp, err := ms.DescribeSpotPriceHistory(req)
+			resp, err := callWithRetry(fmt.Sprintf("DescribeSpotPriceHistory(%s)", instanceType), func() (*ecsService.DescribeSpotPriceHistoryResponse, error) {
+				return ms.DescribeSpotPriceHistory(req)
+			})
 			if err != nil {
 				// Warnings go to stderr so JSON output (stdout) stays clean yet
 				// the signal is visible in both table and JSON modes.
