@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-08-24
+
+### Added
+
+- **Automatic retry with exponential backoff for transient Aliyun API failures**: throttling (HTTP 429, or `Throttling*`/`FlowControl` error codes — which the API can also return with HTTP 400), server-side 5xx, and request timeouts are retried up to 3 times with exponential backoff (1s → 2s → 4s, capped at 10s). Each retry is logged to stderr; JSON output on stdout stays clean. A single transient failure no longer silently drops an instance type from the results — increasingly relevant now that full pagination raises per-run API call volume (upstream issue #9).
+  - Timeouts match both shapes the SDK can produce: the `SDK.TimeoutError` client error (AutoRetry-enabled configs) and the raw `*url.Error`/`net.Error` transport timeout the default configuration returns.
+  - Non-transient errors (invalid parameters, auth failures, endpoint misconfiguration) fail fast with a single attempt.
+  - Retry applies per API call, including mid-pagination: a throttle while fetching page N refetches only that page; already-fetched pages survive.
+
+---
+
 ## [1.1.0] - 2026-08-23
 
 ### Added
